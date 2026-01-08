@@ -1,0 +1,52 @@
+START
+  │
+  ▼
+Iniciar Banco Seguro
+  │
+  ▼
+Mostrar Menú Principal
+  ├─► 1. Iniciar sesión ─────────────────────┐
+  ├─► 2. Crear nueva cuenta ──────────────────┤
+  └─► 3. Salir ◄────────────────────────────────┘
+          │
+          ▼
+   ¿Opción 1? ── Sí ──► Ingresar número de cuenta
+                        │
+                        ▼
+                ¿Cuenta existe? ── No ──► Mostrar error → Volver al menú
+                        │ Sí
+                        ▼
+                Solicitar PIN (máx 3 intentos)
+                        │
+                ¿PIN correcto? ── No (3 veces) ──► Bloquear temporal → Volver menú
+                        │ Sí
+                        ▼
+                Acceso concedido → Mostrar menú usuario
+                        ├─► 1. Consultar saldo ──► Mostrar info → Volver
+                        ├─► 2. Depositar ──► Ingresar monto → Depositar → Mostrar nuevo saldo
+                        ├─► 3. Retirar ──► Ingresar monto → ¿Saldo suficiente? ── No → Error
+                        │                                 │ Sí → Retirar → Mostrar saldo
+                        ├─► 4. Transferir ──► Ingresar cuenta destino y monto
+                        │                  │
+                        │                  ▼
+                        │          ¿Cuenta destino existe? ── No → Error
+                        │                  │ Sí
+                        │                  ▼
+                        │          ¿Saldo suficiente? ── No → Error
+                        │                  │ Sí → Transferir → Mostrar saldo
+                        └─► 5. Cerrar sesión ──► Volver al menú principal
+          │
+   ¿Opción 2? ── Sí ──► Crear nueva cuenta
+                        │
+                        ▼
+                Ingresar: titular, número cuenta, saldo inicial, PIN (4 dígitos)
+                        │
+                ¿Número cuenta ya existe? ── Sí → Error → Volver
+                        │ No
+                        ▼
+                Crear cuenta → Registrar en log → Mostrar éxito → Volver menú
+          │
+   ¿Opción 3? ── Sí ──► Salir del programa
+                        │
+                        ▼
+END
