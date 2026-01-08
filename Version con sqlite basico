@@ -1,0 +1,129 @@
+#include <iostream>
+#include <string>
+#include <vector>
+#include <sstream>
+#include <iomanip>
+#include <algorithm>
+#include "sqlite3.h"
+
+std::string hashPin(const std::string& pin) {
+    std::string hashed = "HASH_";
+    for (char c : pin) {
+        hashed += std::to_string(static_cast<int>(c) * 31 + 17);
+        hashed += "_";
+    }
+    return hashed;
+}
+
+class CuentaBancaria {
+private:
+    std::string titular;
+    std::string numeroCuenta;
+    double saldo;
+    std::string pinHashed;
+public:
+    CuentaBancaria(std::string t, std::string nc, double s, std::string ph)
+        : titular(t), numeroCuenta(nc), saldo(s), pinHashed(ph) {}
+    std::string getNumeroCuenta() const { return numeroCuenta; }
+    std::string getTitular() const { return titular; }
+    double getSaldo() const { return saldo; }
+    std::string getPinHashed() const { return pinHashed; }
+    bool validarPin(const std::string& pin) const { return hashPin(pin) == pinHashed; }
+    bool depositar(double monto) { if (monto > 0) { saldo += monto; return true; } return false; }
+    bool retirar(double monto) { if (monto > 0 && saldo >= monto) { saldo -= monto; return true; } return false; }
+    void actualizarSaldo(double nuevo) { saldo = nuevo; }
+    void mostrarInfo() const {
+        std::cout << "Titular: " << titular << "\n";
+        std::cout << "Cuenta: " << numeroCuenta << "\n";
+        std::cout << std::fixed << std::setprecision(2);
+        std::cout << "Saldo: $" << saldo << "\n\n";
+    }
+};
+
+class BancoSeguro {
+private:
+    sqlite3* db;
+    std::vector<CuentaBancaria> cuentas;
+    const int MAX_INTENTOS = 3;
+
+    void registrarLog(const std::string& msg) {
+        std::string sql = "INSERT INTO logs (mensaje) VALUES (?);";
+        sqlite3_stmt* stmt;
+        sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr);
+        sqlite3_bind_text(stmt, 1, msg.c_str(), -1, SQLITE_STATIC);
+        sqlite3_step(stmt);
+        sqlite3_finalize(stmt);
+        std::cout << "[LOG] " << msg << "\n";
+    }
+
+    void cargarCuentas() {
+        cuentas.clear();
+        sqlite3_stmt* stmt;
+        sqlite3_prepare_v2(db, "SELECT titular, numero_cuenta, saldo, pin_hash FROM cuentas;", -1, &stmt, nullptr);
+        while (sqlite3_step(stmt) == SQLITE_ROW) {
+            std::string t = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+            std::string nc = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+            double s = sqlite3_column_double(stmt, 2);
+            std::string ph = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 3));
+            cuentas.emplace_back(t, nc, s, ph);
+        }
+        sqlite3_finalize(stmt);
+    }
+
+public:
+    BancoSeguro() {
+        sqlite3_open("banco.db", &db);
+        sqlite3_exec(db, "CREATE TABLE IF NOT EXISTS cuentas (id INTEGER PRIMARY KEY, titular TEXT NOT NULL, numero_cuenta TEXT UNIQUE NOT NULL, saldo REAL NOT NULL DEFAULT 0.0, pin_hash TEXT NOT NULL);", nullptr, nullptr, nullptr);
+        sqlite3_exec(db, "CREATE TABLE IF NOT EXISTS logs (id INTEGER PRIMARY KEY, fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP, mensaje TEXT NOT NULL);", nullptr, nullptr, nullptr);
+        registrarLog("Sistema iniciado");
+        cargarCuentas();
+    }
+
+    ~BancoSeguro() {
+        registrarLog("Sistema cerrado");
+        sqlite3_close(db);
+    }
+
+    bool crearCuenta() {
+        std::string titular, numeroCuenta, pin;
+        double saldoInicial = 0.0;
+        std::cout << "\n--- NUEVA CUENTA ---\nNombre titular: ";
+        std::cin.ignore(); std::getline(std::cin, titular);
+        std::cout << "Número cuenta: "; std::cin >> numeroCuenta;
+        if (buscarCuenta(numeroCuenta)) { std::cout << "Cuenta ya existe.\n\n"; return false; }
+        std::cout << "Saldo inicial: "; std::cin >> saldoInicial;
+        std::cout << "PIN (4 dígitos): "; std::cin >> pin;
+        if (pin.length() != 4 || !std::all_of(pin.begin(), pin.end(), ::isdigit)) { std::cout << "PIN inválido.\n\n"; return false; }
+
+        std::string sql = "INSERT INTO cuentas (titular, numero_cuenta, saldo, pin_hash) VALUES (?, ?, ?, ?);";
+        sqlite3_stmt* stmt;
+        sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr);
+        sqlite3_bind_text(stmt, 1, titular.c_str(), -1, SQLITE_STATIC);
+        sqlite3_bind_text(stmt, 2, numeroCuenta.c_str(), -1, SQLITE_STATIC);
+        sqlite3_bind_double(stmt, 3, saldoInicial);
+        sqlite3_bind_text(stmt, 4, hashPin(pin).c_str(), -1, SQLITE_STATIC);
+        bool ok = sqlite3_step(stmt) == SQLITE_DONE;
+        sqlite3_finalize(stmt);
+        if (ok) { cargarCuentas(); registrarLog("Cuenta creada: " + numeroCuenta); std::cout << "Cuenta creada con éxito.\n\n"; }
+        return ok;
+    }
+
+    CuentaBancaria* buscarCuenta(const std::string& nc) {
+        auto it = std::find_if(cuentas.begin(), cuentas.end(), [&nc](const CuentaBancaria& c){ return c.getNumeroCuenta() == nc; });
+        return it != cuentas.end() ? &(*it) : nullptr;
+    }
+
+    bool actualizarSaldo(const std::string& nc, double nuevoSaldo) {
+        std::string sql = "UPDATE cuentas SET saldo = ? WHERE numero_cuenta = ?;";
+        sqlite3_stmt* stmt;
+        sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr);
+        sqlite3_bind_double(stmt, 1, nuevoSaldo);
+        sqlite3_bind_text(stmt, 2, nc.c_str(), -1, SQLITE_STATIC);
+        bool ok = sqlite3_step(stmt) == SQLITE_DONE;
+        sqlite3_finalize(stmt);
+        if (ok) cargarCuentas();
+        return ok;
+    }
+
+    CuentaBancaria* autenticar(const std::string& nc) {
+        Cuenta
